@@ -3,6 +3,7 @@ import { randomBytes } from "node:crypto";
 import { readFile } from "node:fs/promises";
 import { join } from "node:path";
 import { z } from "zod";
+import { isWorkspaceDirectory } from "./paths";
 
 const REQUEST_TIMEOUT_MS = 30_000;
 const SHAPE = "s-1vcpu-1gb";
@@ -157,7 +158,7 @@ export async function runGuardedCommand(sandbox: SandboxHandle, input: { command
   const args = input.args ?? [];
   const totalBytes = [input.command, ...args].reduce((sum, value) => sum + Buffer.byteLength(value, "utf8"), 0);
   if (args.length > 256 || totalBytes > 16 * 1024 || [input.command, ...args].some((value) => value.includes("\0"))) throw new Error("Command argument budget exceeded");
-  if (!input.cwd.startsWith("/workspace/") || input.cwd.split("/").includes("..")) throw new Error("Command working directory is outside the workspace");
+  if (!isWorkspaceDirectory(input.cwd)) throw new Error("Command working directory is outside the workspace");
   const response = await sandbox.runCommand("python3", ["/opt/gentx2/command-runner.py", "--timeout", String(timeoutSeconds), "--cwd", input.cwd, "--", input.command, ...args], {
     timeoutMs: (timeoutSeconds + 12) * 1000,
     retry: false,
@@ -175,7 +176,7 @@ export async function startGuardedProcess(sandbox: SandboxHandle, input: { comma
   const args = input.args ?? [];
   const totalBytes = [input.command, ...args].reduce((sum, value) => sum + Buffer.byteLength(value, "utf8"), 0);
   if (args.length > 256 || totalBytes > 16 * 1024 || [input.command, ...args].some((value) => value.includes("\0"))) throw new Error("Process argument budget exceeded");
-  if (!input.cwd.startsWith("/workspace/") || input.cwd.split("/").includes("..")) throw new Error("Process working directory is outside the workspace");
+  if (!isWorkspaceDirectory(input.cwd)) throw new Error("Process working directory is outside the workspace");
   const response = await sandbox.runCommand("python3", ["/opt/gentx2/command-runner.py", "--timeout", "180", "--cwd", input.cwd, "--detach", "--", input.command, ...args], { timeoutMs: 10_000, retry: false, signal: input.signal });
   const result = GuardedCommandResultSchema.parse(JSON.parse(response.result.stdout));
   if (result.status !== "spawned" || !result.pid || !Number.isSafeInteger(result.pid)) throw new Error("CreateOS target process did not start");
